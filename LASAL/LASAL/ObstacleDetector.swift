@@ -14,7 +14,7 @@ class ObstacleDetector: NSObject, ARSessionDelegate, ObservableObject
 {
     private var heatmapCounter = 0
     private var gridCounter = 0
-
+    @Published var volume = 0.5
     let session = ARSession()
 
     // 3x3 grid in the USER's frame: grid[row][col]
@@ -115,31 +115,43 @@ class ObstacleDetector: NSObject, ARSessionDelegate, ObservableObject
             }
         }
         
-        //Vibration of Phone
-        vibrationReaction(depth: nearest[1])
+        gridCounter += 1
+        if gridCounter % 5 == 0 {           // publish ~12x/sec
+            let centerDepth = g[1][1]
+            
+            DispatchQueue.main.async {
+                self.grid = g
+                
+                // Vibration call on main thread
+                self.vibrationReaction(depth: centerDepth)
+            }
+        }
     }
     
-    func vibrationReaction(depth: Float){
-        let intensity = 5-depth
-        let hapticIntensity = CGFloat(intensity)
-        triggerCustomHaptic(intensity: hapticIntensity/5)
+    func vibrationReaction(depth: Float, volume: Float = 1.0) {
+        guard depth != Float.greatestFiniteMagnitude else { return }
+        
+        let clampedDepth = max(0.1, min(depth, 5.0))
+        let rawIntensity = (5.0 - clampedDepth) / 5.0
+        
+        // 1. Check distance threshold FIRST (e.g., object must be within range)
+        guard rawIntensity > 0.05 else { return }
+        
+        // 2. Apply volume scale SECOND, with a minimum floor (e.g., 0.01) so it still vibrates
+        let scaledIntensity = max(0.01, rawIntensity * volume)
+        
+        triggerCustomHaptic(intensity: CGFloat(scaledIntensity))
     }
-    
+
     func triggerCustomHaptic(intensity: CGFloat) {
+        // Ensure intensity remains strictly within 0.0 ... 1.0
+        let safeIntensity = max(0.0, min(intensity, 1.0))
+        
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.prepare()
-        generator.impactOccurred(intensity: intensity)
+        generator.impactOccurred(intensity: safeIntensity)
     }
     
-    func reactToObstacles(left: Float, center: Float, right: Float) {
-        frameCount += 1
-        guard frameCount % 30 == 0 else {return}
-        DispatchQueue.main.async {
-            self.distances = (left,center,right)
-        }
-                
-        
-        }
     
     func makeHeatmap(from depthMap: CVPixelBuffer,
                      near: Float = 0.2, far: Float = 5.0) -> UIImage? {
