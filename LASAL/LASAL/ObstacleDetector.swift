@@ -82,25 +82,20 @@ class ObstacleDetector: NSObject, ARSessionDelegate, ObservableObject
         }
         
         //Vibration of Phone
-        vibrationReaction(center: nearest[1])
-    }
-    func vibrationReaction(center: Float){
-        if center <= 1{
-            triggerHaptic(style: .heavy)
-        }
-        if center >= 1 && center < 3 {
-            triggerHaptic(style: .medium)
-        }
-        if center > 3 {
-            triggerHaptic(style: .light)
-        }
+        vibrationReaction(depth: nearest[1])
     }
     
-    func triggerHaptic(style: UIImpactFeedbackGenerator.FeedbackStyle) {
-            let generator = UIImpactFeedbackGenerator(style: style)
-            generator.prepare()
-            generator.impactOccurred()
-        }
+    func vibrationReaction(depth: Float){
+        let intensity = 5-depth
+        let hapticIntensity = CGFloat(intensity)
+        triggerCustomHaptic(intensity: hapticIntensity/5)
+    }
+    
+    func triggerCustomHaptic(intensity: CGFloat) {
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.prepare()
+        generator.impactOccurred(intensity: intensity)
+    }
     
     func reactToObstacles(left: Float, center: Float, right: Float) {
         frameCount += 1
