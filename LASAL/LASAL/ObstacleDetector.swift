@@ -15,6 +15,8 @@ class ObstacleDetector: NSObject, ARSessionDelegate, ObservableObject
     private var heatmapCounter = 0
     private var gridCounter = 0
     @Published var volume = 0.5
+    @Published var cellNumber = 1 //1 by default
+    
     let session = ARSession()
 
     // 3x3 grid in the USER's frame: grid[row][col]
@@ -82,30 +84,21 @@ class ObstacleDetector: NSObject, ARSessionDelegate, ObservableObject
             let rowPtr = base.advanced(by: y * rowBytes)
                              .assumingMemoryBound(to: Float32.self)
 
-            // Buffer is landscape while the phone is held portrait, so the
-            // buffer's y axis maps to the user's left/right.
             let yBucket = y < height / 3 ? 0 : (y < 2 * height / 3 ? 1 : 2)
-            let col = 2 - yBucket            // flip baked in: high y = user's LEFT (col 0)
+            let col = 2 - yBucket
 
             for x in 0..<width {
                 let d = rowPtr[x]
                 guard d > 0.1, d < 5.0 else { continue }
 
-                // Buffer's x axis maps to top/bottom.
                 let xBucket = x < width / 3 ? 0 : (x < 2 * width / 3 ? 1 : 2)
-                let row = xBucket           // if top/bottom come out inverted, use: 2 - xBucket
+                let row = xBucket
 
                 if d < g[row][col] { g[row][col] = d }
             }
         }
 
-        gridCounter += 1
-        if gridCounter % 5 == 0 {           // publish ~12x/sec
-            DispatchQueue.main.async {
-                self.grid = g
-            }
-        }
-
+        // Heatmap update (~3x/sec assuming 60fps)
         heatmapCounter += 1
         if heatmapCounter % 20 == 0 {
             if let image = makeHeatmap(from: depthMap) {
@@ -114,17 +107,31 @@ class ObstacleDetector: NSObject, ARSessionDelegate, ObservableObject
                 }
             }
         }
-        
+
+        // Grid & Vibration update (~12x/sec)
         gridCounter += 1
-        if gridCounter % 5 == 0 {           // publish ~12x/sec
-            let centerDepth = g[1][1]
+        if gridCounter % 5 == 0 {
+            let selectedCell = getCell(cell: cellNumber, g)
             
             DispatchQueue.main.async {
                 self.grid = g
-                
-                // Vibration call on main thread
-                self.vibrationReaction(depth: centerDepth)
+                self.vibrationReaction(depth: selectedCell)
             }
+        }
+    }
+    func getCell(cell: Int, _ g: [[Float]]) -> Float {
+        switch cell {
+        case 1: return g[0][0]
+        case 2: return g[0][1]
+        case 3: return g[0][2]
+        case 4: return g[1][0]
+        case 5: return g[1][1]
+        case 6: return g[1][2]
+        case 7: return g[2][0]
+        case 8: return g[2][1]
+        case 9: return g[2][2]
+        default:
+            return Float.greatestFiniteMagnitude
         }
     }
     
