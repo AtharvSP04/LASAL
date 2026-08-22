@@ -80,9 +80,27 @@ class ObstacleDetector: NSObject, ARSessionDelegate, ObservableObject
                 }
             }
         }
+        
+        //Vibration of Phone
+        vibrationReaction(center: nearest[1])
+    }
+    func vibrationReaction(center: Float){
+        if center <= 1{
+            triggerHaptic(style: .heavy)
+        }
+        if center >= 1 && center < 3 {
+            triggerHaptic(style: .medium)
+        }
+        if center > 3 {
+            triggerHaptic(style: .light)
+        }
     }
     
-    
+    func triggerHaptic(style: UIImpactFeedbackGenerator.FeedbackStyle) {
+            let generator = UIImpactFeedbackGenerator(style: style)
+            generator.prepare()
+            generator.impactOccurred()
+        }
     
     func reactToObstacles(left: Float, center: Float, right: Float) {
         frameCount += 1
