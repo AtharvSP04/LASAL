@@ -13,65 +13,99 @@ import UIKit
 class ObstacleDetector: NSObject, ARSessionDelegate, ObservableObject
 {
     private var heatmapCounter = 0
-    private var frameCount = 0
-    
+    private var gridCounter = 0
+
     let session = ARSession()
-    @Published var distances: (left: Float, center: Float, right: Float) = (.greatestFiniteMagnitude, .greatestFiniteMagnitude, .greatestFiniteMagnitude)
+
+    // 3x3 grid in the USER's frame: grid[row][col]
+    // row 0 = top, col 0 = left. Value is nearest distance in metres.
+    // .greatestFiniteMagnitude means "no confident reading" in that cell.
+    @Published var grid: [[Float]] = Array(
+        repeating: Array(repeating: .greatestFiniteMagnitude, count: 3),
+        count: 3
+    )
+
     @Published var heatmap: UIImage?
-    
+
     override init()
     {
         super.init()
         session.delegate = self
         startSession()
     }
-    
+
+    // MARK: - Public interface for the UI/UX team
+    //
+    // Read any cell safely. row and col are 0...2 in the user's frame:
+    //   (0,0) = top-left      (0,2) = top-right
+    //   (2,0) = bottom-left   (2,2) = bottom-right
+    // Returns metres, or .greatestFiniteMagnitude if there's no reading
+    // (or if you pass an out-of-range index).
+    func distance(row: Int, col: Int) -> Float
+    {
+        guard (0..<3).contains(row), (0..<3).contains(col) else {
+            return .greatestFiniteMagnitude
+        }
+        return grid[row][col]
+    }
+
     func startSession()
     {
         guard ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) else {
-            
-            
             print("No LiDAR/scene depth")
             return
         }
-        
+
         let config = ARWorldTrackingConfiguration()
-        
         config.frameSemantics = ARWorldTrackingConfiguration.supportsFrameSemantics(.smoothedSceneDepth) ? .smoothedSceneDepth : .sceneDepth
         session.run(config)
         print("Session has started")
     }
-    
+
     func session(_ session: ARSession, didUpdate frame: ARFrame)
     {
         guard let depth = frame.smoothedSceneDepth ?? frame.sceneDepth else { return }
         let depthMap = depth.depthMap
-        
+
         CVPixelBufferLockBaseAddress(depthMap, .readOnly)
-        defer {CVPixelBufferUnlockBaseAddress(depthMap, .readOnly)}
-        
+        defer { CVPixelBufferUnlockBaseAddress(depthMap, .readOnly) }
+
         let width = CVPixelBufferGetWidth(depthMap)
         let height = CVPixelBufferGetHeight(depthMap)
         let rowBytes = CVPixelBufferGetBytesPerRow(depthMap)
-        guard let base = CVPixelBufferGetBaseAddress(depthMap) else {return}
-        
-        var nearest: [Float] = [.greatestFiniteMagnitude, .greatestFiniteMagnitude, .greatestFiniteMagnitude]
-        
-        // sample the middle horizontal band, spilt into 3 vertical zones
-        
-        for y in (height / 3)..<(2 * height / 3) {
-            let row = base.advanced(by: y * rowBytes).assumingMemoryBound(to: Float32.self)
+        guard let base = CVPixelBufferGetBaseAddress(depthMap) else { return }
+
+        // 3x3, indexed [row][col] in the user's frame
+        var g = Array(repeating: Array(repeating: Float.greatestFiniteMagnitude, count: 3), count: 3)
+
+        for y in 0..<height {
+            let rowPtr = base.advanced(by: y * rowBytes)
+                             .assumingMemoryBound(to: Float32.self)
+
+            // Buffer is landscape while the phone is held portrait, so the
+            // buffer's y axis maps to the user's left/right.
+            let yBucket = y < height / 3 ? 0 : (y < 2 * height / 3 ? 1 : 2)
+            let col = 2 - yBucket            // flip baked in: high y = user's LEFT (col 0)
+
             for x in 0..<width {
-                let d = row[x]
-                guard d > 0.1, d < 5.0 else {continue} //skip if it's junk or out of range
-                let zone = x < width / 3 ? 0 : (x < 2 * width / 3 ? 1 : 2)
-                nearest[zone] = min(nearest[zone], d)
+                let d = rowPtr[x]
+                guard d > 0.1, d < 5.0 else { continue }
+
+                // Buffer's x axis maps to top/bottom.
+                let xBucket = x < width / 3 ? 0 : (x < 2 * width / 3 ? 1 : 2)
+                let row = xBucket           // if top/bottom come out inverted, use: 2 - xBucket
+
+                if d < g[row][col] { g[row][col] = d }
             }
         }
-        
-        reactToObstacles(left: nearest[0], center: nearest[1], right: nearest[2])
-        
-        
+
+        gridCounter += 1
+        if gridCounter % 5 == 0 {           // publish ~12x/sec
+            DispatchQueue.main.async {
+                self.grid = g
+            }
+        }
+
         heatmapCounter += 1
         if heatmapCounter % 20 == 0 {
             if let image = makeHeatmap(from: depthMap) {
@@ -81,19 +115,7 @@ class ObstacleDetector: NSObject, ARSessionDelegate, ObservableObject
             }
         }
     }
-    
-    
-    
-    func reactToObstacles(left: Float, center: Float, right: Float) {
-        frameCount += 1
-        guard frameCount % 30 == 0 else {return}
-        DispatchQueue.main.async {
-            self.distances = (left,center,right)
-        }
-                
-        
-        }
-    
+
     func makeHeatmap(from depthMap: CVPixelBuffer,
                      near: Float = 0.2, far: Float = 5.0) -> UIImage? {
         CVPixelBufferLockBaseAddress(depthMap, .readOnly)
@@ -149,5 +171,4 @@ class ObstacleDetector: NSObject, ARSessionDelegate, ObservableObject
         }
         return (UInt8(r * 255), UInt8(g * 255), UInt8(b * 255))
     }
-    }
-
+}
