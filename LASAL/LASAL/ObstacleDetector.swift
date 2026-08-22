@@ -61,8 +61,35 @@ final class ObstacleDetector: NSObject, ARSessionDelegate, ObservableObject {
         return grid[row][col]
     }
 
+    /// Maps intensity 1…5 → fraction of max haptic feedback:
+    ///   1 → 40%,  2 → 60%,  3 → 80%,  4 → 90%,  5 → 100%
     func setVolumeFromIntensity(_ intensity: Int) {
-        volume = max(0.2, min(1.0, Float(intensity) / 5.0))
+        volume = Self.scale(for: intensity)
+    }
+
+    /// Scale table for intensity levels (index 1…5).
+    private static func scale(for intensity: Int) -> Float {
+        switch max(1, min(5, intensity)) {
+        case 1: return 0.40
+        case 2: return 0.60
+        case 3: return 0.80
+        case 4: return 0.90
+        default: return 1.00
+        }
+    }
+
+    /// Until this time, LiDAR-driven haptics are suppressed so intensity
+    /// previews are not drowned out by continuous depth feedback.
+    private var hapticSuppressUntil: Date = .distantPast
+
+    /// Play a one-shot haptic at this level’s *maximum* strength (as if an
+    /// object were right in front of you). Suppresses LiDAR haptics briefly
+    /// so the preview is clearly felt even while sensing is on.
+    func previewIntensity(_ intensity: Int) {
+        setVolumeFromIntensity(intensity)
+        let scale = Self.scale(for: intensity)
+        hapticSuppressUntil = Date().addingTimeInterval(0.40)
+        triggerCustomHaptic(intensity: CGFloat(scale))
     }
 
     func start() {
@@ -182,6 +209,8 @@ final class ObstacleDetector: NSObject, ARSessionDelegate, ObservableObject {
     }
 
     func vibrationReaction(depth: Float, volume: Float = 1.0) {
+        // Intensity-wheel preview owns the motor briefly — skip LiDAR ticks.
+        guard Date() >= hapticSuppressUntil else { return }
         guard depth != Float.greatestFiniteMagnitude else { return }
 
         let clampedDepth = max(0.1, min(depth, 5.0))
@@ -190,7 +219,7 @@ final class ObstacleDetector: NSObject, ARSessionDelegate, ObservableObject {
         // 1. Check distance threshold FIRST (e.g., object must be within range)
         guard rawIntensity > 0.05 else { return }
 
-        // 2. Apply volume scale SECOND, with a minimum floor (e.g., 0.01) so it still vibrates
+        // 2. Apply volume scale SECOND, with a minimum floor so it still vibrates
         let scaledIntensity = max(0.01, rawIntensity * volume)
 
         triggerCustomHaptic(intensity: CGFloat(scaledIntensity))

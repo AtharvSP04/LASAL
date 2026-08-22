@@ -12,7 +12,7 @@ enum Announcer {
         stop()
         let u = AVSpeechUtterance(string: text)
         u.voice = AVSpeechSynthesisVoice(language: language.speechCode)
-        u.rate = AVSpeechUtteranceDefaultSpeechRate * 0.92
+        u.rate = AVSpeechUtteranceDefaultSpeechRate * 0.75
         synth.speak(u)
     }
 

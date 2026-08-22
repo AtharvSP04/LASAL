@@ -14,7 +14,7 @@ struct ContentView: View {
                 tabStack(size: geo.size)
 
                 if store.panel == .intensity {
-                    IntensityWheel()
+                    IntensityWheel(detector: detector)
                         .transition(.move(edge: .trailing))
                 }
                 if store.panel == .language {
@@ -258,32 +258,46 @@ struct HintFooter: View {
 
 struct IntensityWheel: View {
     @EnvironmentObject var store: AppStore
-    /// Accumulated drag steps so a long swipe can change several values.
+    @ObservedObject var detector: ObstacleDetector
     @State private var lastStep = 0
     private let stepHeight: CGFloat = 44
 
     var body: some View {
         ZStack {
             Color.white.ignoresSafeArea()
-            VStack {
-                Text("INTENSITY").font(.system(size: 11, weight: .medium, design: .monospaced)).tracking(3).foregroundStyle(.gray)
-                Picker("Intensity", selection: $store.intensity) {
+            VStack(spacing: 28) {
+                Text("INTENSITY")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .tracking(3)
+                    .foregroundStyle(.gray)
+
+                // Custom list — no UIPickerView, so rotation never blanks the options.
+                VStack(spacing: 10) {
                     ForEach(1...5, id: \.self) { n in
-                        Text("\(n)").tag(n)
+                        Text("\(n)")
+                            .font(.system(size: n == store.intensity ? 56 : 28,
+                                          weight: n == store.intensity ? .bold : .regular,
+                                          design: .rounded))
+                            .foregroundStyle(n == store.intensity ? Color.black : Color.gray.opacity(0.45))
+                            .frame(maxWidth: .infinity)
+                            .animation(.easeInOut(duration: 0.15), value: store.intensity)
                     }
                 }
-                .pickerStyle(.wheel)
-                .allowsHitTesting(false)   // whole screen drives the value
+                .frame(maxHeight: 320)
+
                 Text("SWIPE UP / DOWN TO ADJUST")
                     .font(.system(size: 11)).tracking(1.4).foregroundStyle(.gray)
                 Text("SWIPE RIGHT FOR BACK TO MENU")
                     .font(.system(size: 11)).tracking(1.4).foregroundStyle(.gray)
             }
             .foregroundStyle(.black)
+            .padding(.vertical, 36)
         }
         .contentShape(Rectangle())
         .gesture(fullScreenDrag)
         .onChange(of: store.intensity) { _, n in
+            // Preview this level’s max haptic (overrides LiDAR briefly).
+            detector.previewIntensity(n)
             Announcer.number(n, language: store.language)
         }
     }
@@ -291,7 +305,6 @@ struct IntensityWheel: View {
     private var fullScreenDrag: some Gesture {
         DragGesture(minimumDistance: 12)
             .onChanged { value in
-                // Prefer vertical control; ignore mostly-horizontal moves (back swipe).
                 guard abs(value.translation.height) >= abs(value.translation.width) else { return }
                 // Up (negative height) → higher intensity
                 let stepIndex = Int(-value.translation.height / stepHeight)
@@ -301,12 +314,11 @@ struct IntensityWheel: View {
                 let next = min(5, max(1, store.intensity + diff))
                 if next != store.intensity {
                     store.intensity = next
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    // Haptic preview is fired from onChange via detector.previewIntensity
                 }
             }
             .onEnded { value in
                 lastStep = 0
-                // Horizontal swipe right → back to menu
                 if value.translation.width > 70,
                    abs(value.translation.width) > abs(value.translation.height) {
                     store.panel = .stack
@@ -324,21 +336,32 @@ struct LanguageWheel: View {
     var body: some View {
         ZStack {
             Color.white.ignoresSafeArea()
-            VStack {
-                Text("LANGUAGE").font(.system(size: 11, weight: .medium, design: .monospaced)).tracking(3).foregroundStyle(.gray)
-                Picker("Language", selection: $store.language) {
+            VStack(spacing: 28) {
+                Text("LANGUAGE")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .tracking(3)
+                    .foregroundStyle(.gray)
+
+                // Custom list — no UIPickerView, rotation-safe.
+                VStack(spacing: 14) {
                     ForEach(Self.languages, id: \.self) { lang in
-                        Text(lang.nativeName).tag(lang)
+                        Text(lang.nativeName)
+                            .font(.system(size: lang == store.language ? 48 : 26,
+                                          weight: lang == store.language ? .bold : .regular))
+                            .foregroundStyle(lang == store.language ? Color.black : Color.gray.opacity(0.45))
+                            .frame(maxWidth: .infinity)
+                            .animation(.easeInOut(duration: 0.15), value: store.language)
                     }
                 }
-                .pickerStyle(.wheel)
-                .allowsHitTesting(false)   // whole screen drives the value
+                .frame(maxHeight: 280)
+
                 Text("SWIPE UP / DOWN TO ADJUST")
                     .font(.system(size: 11)).tracking(1.4).foregroundStyle(.gray)
                 Text("SWIPE RIGHT FOR BACK TO MENU")
                     .font(.system(size: 11)).tracking(1.4).foregroundStyle(.gray)
             }
             .foregroundStyle(.black)
+            .padding(.vertical, 36)
         }
         .contentShape(Rectangle())
         .gesture(fullScreenDrag)
@@ -351,7 +374,6 @@ struct LanguageWheel: View {
         DragGesture(minimumDistance: 12)
             .onChanged { value in
                 guard abs(value.translation.height) >= abs(value.translation.width) else { return }
-                // Up → next language in the list; down → previous (clamped, not wrapping)
                 let stepIndex = Int(-value.translation.height / stepHeight)
                 guard stepIndex != lastStep else { return }
                 let diff = stepIndex - lastStep
