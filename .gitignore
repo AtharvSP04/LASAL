@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+
+$ Xcode user state & build artifacts
+xcuserdata/
+*.excuserstate
+build/
+DerivedData/
+
+# Swift Package Maager
+.build/
+.swiftpm/
+
+# Dependency managers (if you add them later)
+Pod/
+Carthage/Build/
