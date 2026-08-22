@@ -114,8 +114,33 @@ class ObstacleDetector: NSObject, ARSessionDelegate, ObservableObject
                 }
             }
         }
+        
+        //Vibration of Phone
+        vibrationReaction(depth: nearest[1])
     }
-
+    
+    func vibrationReaction(depth: Float){
+        let intensity = 5-depth
+        let hapticIntensity = CGFloat(intensity)
+        triggerCustomHaptic(intensity: hapticIntensity/5)
+    }
+    
+    func triggerCustomHaptic(intensity: CGFloat) {
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.prepare()
+        generator.impactOccurred(intensity: intensity)
+    }
+    
+    func reactToObstacles(left: Float, center: Float, right: Float) {
+        frameCount += 1
+        guard frameCount % 30 == 0 else {return}
+        DispatchQueue.main.async {
+            self.distances = (left,center,right)
+        }
+                
+        
+        }
+    
     func makeHeatmap(from depthMap: CVPixelBuffer,
                      near: Float = 0.2, far: Float = 5.0) -> UIImage? {
         CVPixelBufferLockBaseAddress(depthMap, .readOnly)
