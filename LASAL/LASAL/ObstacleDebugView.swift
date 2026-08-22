@@ -24,7 +24,7 @@ struct ObstacleDebugView: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            Text("ObstacleDetector")
+            Text("LiDAR")
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .tracking(3)
                 .foregroundStyle(.secondary)
